@@ -1,0 +1,155 @@
+"""
+Celery 异步 Prompt 优化任务
+"""
+import json
+import asyncio
+from datetime import datetime
+
+from app.tasks.celery_app import celery_app
+
+
+@celery_app.task(bind=True, track_started=True)
+def run_optimization_task(self, task_id: int, config_json: str, dataset_items_json: str):
+    """
+    异步执行 Prompt 优化任务
+    """
+    from app.services.optimizer import optimizer, OptimizationConfig
+    from sqlalchemy import select, update
+    from app.core.database import async_session
+    from app.models.optimization import OptimizationTask, OptimizationRound, OptimizationCandidate
+    from app.models.prompt import Prompt, PromptVersion
+
+    config_data = json.loads(config_json)
+    dataset_items = json.loads(dataset_items_json)
+
+    opt_config = OptimizationConfig(
+        model_config=config_data["model_config"],
+        optimizer_model_config=config_data["optimizer_model_config"],
+        metric_configs=config_data["metric_configs"],
+        max_rounds=config_data.get("max_rounds", 10),
+        candidates_per_round=config_data.get("candidates_per_round", 3),
+        convergence_threshold=config_data.get("convergence_threshold", 0.01),
+    )
+
+    async def progress_callback(round_num, best_score, best_prompt, status):
+        async with async_session() as db:
+            await db.execute(
+                update(OptimizationTask).where(OptimizationTask.id == task_id).values(
+                    current_round=round_num,
+                    best_score=round(best_score, 4),
+                    best_prompt=best_prompt,
+                    score_history_json=json.dumps(score_history_tracker, ensure_ascii=False),
+                )
+            )
+            await db.commit()
+        self.update_state(state="PROGRESS", meta={
+            "round": round_num, "score": best_score, "status": status
+        })
+
+    score_history_tracker = []
+
+    async def _run():
+        nonlocal score_history_tracker
+
+        async with async_session() as db:
+            # 更新状态
+            await db.execute(
+                update(OptimizationTask).where(OptimizationTask.id == task_id).values(
+                    status="running",
+                    started_at=datetime.utcnow(),
+                )
+            )
+            await db.commit()
+
+        # 包装 progress_callback 以记录分数历史
+        async def wrapped_progress(round_num, best_score, best_prompt, status):
+            nonlocal score_history_tracker
+            score_history_tracker.append(best_score)
+            await progress_callback(round_num, best_score, best_prompt, status)
+
+        result = await optimizer.optimize(
+            task_id=task_id,
+            config=opt_config,
+            dataset_items=dataset_items,
+            initial_prompt=config_data["initial_prompt"],
+            progress_callback=wrapped_progress,
+        )
+
+        # 保存详细结果到数据库
+        async with async_session() as db:
+            await db.execute(
+                update(OptimizationTask).where(OptimizationTask.id == task_id).values(
+                    status=result["status"],
+                    best_prompt=result["best_prompt"],
+                    best_score=round(result["best_score"], 4),
+                    baseline_score=round(result["baseline_score"], 4),
+                    current_round=len(result["rounds"]),
+                    score_history_json=json.dumps(result["score_history"], ensure_ascii=False),
+                    finished_at=datetime.utcnow(),
+                )
+            )
+            await db.commit()
+
+            # 保存每轮详情
+            for rd in result["rounds"]:
+                round_record = OptimizationRound(
+                    optimization_task_id=task_id,
+                    round_number=rd["round_number"],
+                    prompt_before=rd["prompt_before"],
+                    best_prompt_after=rd["best_prompt_after"],
+                    score_before=rd["score_before"],
+                    score_after=rd["score_after"],
+                    candidates_json=json.dumps(rd["candidates"], ensure_ascii=False),
+                    error_samples_json=json.dumps(rd["error_samples"], ensure_ascii=False),
+                )
+                db.add(round_record)
+            await db.commit()
+
+            # 更新关联的 Prompt 记录
+            prompt_id = config_data.get("prompt_id")
+            if prompt_id:
+                await db.execute(
+                    update(Prompt).where(Prompt.id == prompt_id).values(
+                        current_content=result["best_prompt"],
+                        best_score=round(result["best_score"], 4),
+                        current_version=f"v{len(result['rounds']) + 1}",
+                    )
+                )
+                await db.commit()
+
+                # 创建新版本记录
+                version = PromptVersion(
+                    prompt_id=prompt_id,
+                    version=f"v{len(result['rounds']) + 1}",
+                    content=result["best_prompt"],
+                    score=round(result["best_score"], 4),
+                    source="optimization",
+                    optimization_task_id=task_id,
+                )
+                db.add(version)
+                await db.commit()
+
+        return {"status": result["status"], "best_score": result["best_score"]}
+
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        output = loop.run_until_complete(_run())
+        loop.close()
+        return output
+    except Exception as e:
+        async def _fail():
+            async with async_session() as db:
+                await db.execute(
+                    update(OptimizationTask).where(OptimizationTask.id == task_id).values(
+                        status="failed",
+                        error_message=str(e),
+                        finished_at=datetime.utcnow(),
+                    )
+                )
+                await db.commit()
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(_fail())
+        loop.close()
+        raise

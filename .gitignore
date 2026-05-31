@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+dist/
+*.whl
+venv/
+.venv/
+*.so
+
+# Node
+node_modules/
+webui/node_modules/
+frontend2/
+
+# Build
+webui/dist/
+*.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.db
+*.sqlite3
+
+# Docker
+mysql_data/
+minio_data/
+
+# Logs
+*.log
