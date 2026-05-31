@@ -222,7 +222,8 @@ class PromptOptimizer:
         async def eval_one(item: dict):
             nonlocal total_score
             async with sem:
-                messages = self._build_messages(prompt, item["input_text"])
+                from app.services.llm_service import build_messages
+                messages = build_messages(prompt, item["input_text"])
                 llm_result = await llm_service.chat(
                     api_base=model_config["api_base"],
                     api_key=model_config["api_key"],

@@ -11,6 +11,7 @@ from app.models.llm_model import LLMModel
 from app.schemas.model import LLMModelCreate, LLMModelUpdate, LLMModelResponse, ModelPingResponse
 from app.schemas.common import PaginatedResponse
 from .demo_data import DEMO_MODELS, get_demo_list, paginated
+from app.utils.crypto import encrypt_api_key, decrypt_api_key
 
 router = APIRouter(tags=["models"])
 
@@ -62,7 +63,9 @@ async def get_model(model_id: int, db: AsyncSession = Depends(get_db), current_u
 @router.post("/", response_model=LLMModelResponse, status_code=status.HTTP_201_CREATED)
 async def create_model(req: LLMModelCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        model = LLMModel(**req.model_dump())
+        data = req.model_dump()
+        data["api_key"] = encrypt_api_key(data.get("api_key", ""))
+        model = LLMModel(**data)
         db.add(model)
         await db.commit()
         await db.refresh(model)
@@ -81,6 +84,8 @@ async def update_model(model_id: int, req: LLMModelUpdate, db: AsyncSession = De
         if not model:
             raise HTTPException(status_code=404, detail="模型不存在")
         for key, value in req.model_dump(exclude_unset=True).items():
+            if key == "api_key" and value:
+                value = encrypt_api_key(value)
             setattr(model, key, value)
         await db.commit()
         await db.refresh(model)

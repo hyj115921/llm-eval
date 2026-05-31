@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
+    # Demo 模式：设为 False 时，所有 API 强制要求数据库，失败就明确报错
+    DEMO_MODE: bool = True
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

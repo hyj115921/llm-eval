@@ -229,9 +229,10 @@ async def start_eval_task(
         model = model_result.scalar_one_or_none()
         if not model:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="关联的模型不存在")
+        from app.utils.crypto import decrypt_api_key
         model_config = {
             "api_base": model.api_base,
-            "api_key": model.api_key,
+            "api_key": decrypt_api_key(model.api_key),
             "model_identifier": model.model_identifier,
         }
 
@@ -257,9 +258,17 @@ async def start_eval_task(
                 for m in metrics
             ]
 
-        # 5. 更新任务状态
+        # 5. 清理旧结果（重跑时）并更新状态
+        if task.completed_items > 0:
+            await db.execute(
+                "DELETE FROM eval_results WHERE eval_task_id = :tid", {"tid": task_id}
+            )
+            await db.commit()
         task.status = "running"
         task.total_items = len(dataset_items)
+        task.completed_items = 0
+        task.overall_score = 0.0
+        task.result_json = "{}"
         task.started_at = datetime.utcnow()
         task.error_message = ""
         await db.commit()
@@ -326,6 +335,15 @@ async def cancel_eval_task(
 
         if task.status not in ("pending", "running"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"无法取消状态为 '{task.status}' 的任务")
+
+        # 真正取消 Celery 任务
+        if task.celery_task_id:
+            try:
+                from app.tasks.celery_app import celery_app
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+                logger.info("已撤销 Celery 任务: %s", task.celery_task_id)
+            except Exception as e:
+                logger.warning("撤销 Celery 任务失败: %s", e)
 
         task.status = "cancelled"
         task.finished_at = datetime.utcnow()

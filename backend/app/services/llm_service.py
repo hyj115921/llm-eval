@@ -145,5 +145,38 @@ class LLMService:
             self._client = None
 
 
+def build_messages(prompt_template: str, input_text: str) -> list[dict]:
+    """
+    统一的 Prompt 模板解析，支持两种格式：
+
+    格式1（推荐）：使用 [SYSTEM]...[/SYSTEM] 分隔系统提示词和用户提示词
+        [SYSTEM]
+        你是一个金融专家。
+        [/SYSTEM]
+        请回答：{input}
+
+    格式2：纯文本，整个作为 system message，input 作为 user message
+        你是一个问答助手。请回答用户问题。
+
+    变量替换：{input} 会被替换为实际输入文本
+    """
+    template = prompt_template.replace("{input}", input_text)
+
+    if "[SYSTEM]" in template and "[/SYSTEM]" in template:
+        sys_start = template.index("[SYSTEM]") + 8
+        sys_end = template.index("[/SYSTEM]")
+        system_content = template[sys_start:sys_end].strip()
+        user_content = template[sys_end + 10:].strip()
+        return [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+    else:
+        return [
+            {"role": "system", "content": template},
+            {"role": "user", "content": input_text},
+        ]
+
+
 # 全局单例
 llm_service = LLMService()

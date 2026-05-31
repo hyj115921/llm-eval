@@ -435,6 +435,8 @@ async def add_dataset_items(
         dataset = dataset_result.scalar_one_or_none()
         if not dataset:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在")
+        if dataset.status in ("published", "approved"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="已发布/已审核的数据集不能直接修改条目，请创建新版本后再编辑")
 
         max_order_result = await db.execute(
             select(func.max(DatasetItem.sort_order)).where(DatasetItem.dataset_id == dataset_id)
@@ -516,6 +518,10 @@ async def delete_dataset_item(
 
         dataset_result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
         dataset = dataset_result.scalar_one_or_none()
+        if not dataset:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在")
+        if dataset.status in ("published", "approved"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="已发布/已审核的数据集不能直接删除条目，请创建新版本后再编辑")
         if dataset:
             dataset.item_count = max(0, dataset.item_count - 1)
 

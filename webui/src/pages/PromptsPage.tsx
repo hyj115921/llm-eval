@@ -178,7 +178,16 @@ function PromptsPage() {
           <Button
             type="link"
             icon={<ThunderboltOutlined />}
-            onClick={() => navigate(`/prompts/optimization/${record.id}`)}
+            onClick={() => {
+              fetchRefs();
+              optForm.resetFields();
+              optForm.setFieldsValue({
+                prompt_id: record.id,
+                initial_prompt: record.current_content,
+                name: `${record.name} - 优化`,
+              });
+              setOptModalOpen(true);
+            }}
           >
             优化
           </Button>
@@ -365,8 +374,11 @@ function PromptsPage() {
               ))}
             </Select>
           </Form.Item>
+          <Form.Item name="prompt_id" hidden>
+            <Input />
+          </Form.Item>
           <Form.Item name="initial_prompt" label="初始Prompt" rules={[{ required: true, message: '请输入' }]}>
-            <Input.TextArea rows={4} placeholder="初始Prompt模板" />
+            <Input.TextArea rows={4} placeholder="初始Prompt模板（支持 {input} 变量和 [SYSTEM]...[/SYSTEM] 格式）" />
           </Form.Item>
           <Form.Item name="strategy" label="优化策略" initialValue="balanced">
             <Select>

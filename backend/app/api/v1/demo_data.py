@@ -1,7 +1,23 @@
 """
-Demo 模式内存数据 — 数据库不可用时自动回退
+Demo 模式内存数据 — 数据库不可用时自动回退。
+当 DEMO_MODE=False 时，禁用所有回退，直接抛出原始错误。
 """
 from datetime import datetime
+from app.core.config import settings
+
+
+def is_demo_mode() -> bool:
+    """检查是否启用 Demo 模式"""
+    return settings.DEMO_MODE
+
+
+def demo_or_raise(e: Exception, message: str = "操作失败"):
+    """如果启用 demo 模式，返回 None；否则抛出原始异常"""
+    if is_demo_mode():
+        return None
+    if isinstance(e, Exception):
+        raise e
+    raise RuntimeError(message)
 
 NOW = datetime.utcnow()
 

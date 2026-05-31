@@ -517,9 +517,10 @@ async def start_optimization(
             ]
 
         # 5. 构建配置
+        from app.utils.crypto import decrypt_api_key
         config_data = {
-            "model_config": {"api_base": model.api_base, "api_key": model.api_key, "model_identifier": model.model_identifier},
-            "optimizer_model_config": {"api_base": optimizer_model.api_base, "api_key": optimizer_model.api_key, "model_identifier": optimizer_model.model_identifier},
+            "model_config": {"api_base": model.api_base, "api_key": decrypt_api_key(model.api_key), "model_identifier": model.model_identifier},
+            "optimizer_model_config": {"api_base": optimizer_model.api_base, "api_key": decrypt_api_key(optimizer_model.api_key), "model_identifier": optimizer_model.model_identifier},
             "metric_configs": metric_configs,
             "initial_prompt": task.initial_prompt,
             "max_rounds": task.max_rounds,
@@ -591,6 +592,15 @@ async def cancel_optimization(
 
         if task.status not in ("pending", "running"):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"无法取消状态为 '{task.status}' 的任务")
+
+        # 真正取消 Celery 任务
+        if task.celery_task_id:
+            try:
+                from app.tasks.celery_app import celery_app
+                celery_app.control.revoke(task.celery_task_id, terminate=True)
+                logger.info("已撤销 Celery 优化任务: %s", task.celery_task_id)
+            except Exception as e:
+                logger.warning("撤销 Celery 优化任务失败: %s", e)
 
         task.status = "cancelled"
         task.finished_at = datetime.utcnow()

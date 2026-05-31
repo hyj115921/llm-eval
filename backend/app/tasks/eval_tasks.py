@@ -44,10 +44,8 @@ def run_eval_task(self, task_id: int, model_config: dict, dataset_items_json: st
         async def process_item(idx: int, item: dict):
             nonlocal total_score, completed
             async with sem:
-                messages = [
-                    {"role": "system", "content": prompt_content},
-                    {"role": "user", "content": item["input_text"]},
-                ]
+                from app.services.llm_service import build_messages
+                messages = build_messages(prompt_content, item["input_text"])
                 llm_result = await llm_service.chat(
                     api_base=model_config["api_base"],
                     api_key=model_config["api_key"],
