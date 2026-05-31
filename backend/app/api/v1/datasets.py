@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -531,3 +531,61 @@ async def delete_dataset_item(
         raise
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Demo模式不支持此操作")
+
+
+@router.post("/{dataset_id}/import")
+async def import_dataset_items(
+    dataset_id: int,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """批量导入数据 — 支持 CSV / JSONL / Excel"""
+    from app.utils.importer import detect_and_parse
+
+    try:
+        dataset_result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+        dataset = dataset_result.scalar_one_or_none()
+        if not dataset:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="数据集不存在")
+        if dataset.status in ("published", "approved"):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="已发布数据集不能直接导入，请创建新版本后再操作")
+
+        content = await file.read()
+        items_data, fmt_name = detect_and_parse(file.filename or "data.csv", content)
+
+        if not items_data:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="文件中未找到有效数据")
+
+        max_order_result = await db.execute(
+            select(func.max(DatasetItem.sort_order)).where(DatasetItem.dataset_id == dataset_id)
+        )
+        max_order = max_order_result.scalar() or 0
+
+        added = 0
+        for idx, item_data in enumerate(items_data):
+            item = DatasetItem(
+                dataset_id=dataset_id,
+                input_text=item_data["input_text"],
+                expected_output=item_data.get("expected_output", ""),
+                scene_label=item_data.get("scene_label", ""),
+                difficulty=item_data.get("difficulty", "medium"),
+                sort_order=max_order + idx + 1,
+            )
+            db.add(item)
+            added += 1
+
+        dataset.item_count = dataset.item_count + added
+        await db.commit()
+
+        return {
+            "success": True,
+            "format": fmt_name,
+            "imported": added,
+            "total_items": dataset.item_count,
+            "message": f"成功从 {fmt_name} 文件导入 {added} 条数据",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"导入失败: {str(e)}")
