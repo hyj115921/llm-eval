@@ -5,7 +5,7 @@ from datetime import datetime
 import httpx
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_data_manager
 from app.models.user import User
 from app.models.llm_model import LLMModel
 from app.schemas.model import LLMModelCreate, LLMModelUpdate, LLMModelResponse, ModelPingResponse
@@ -61,7 +61,7 @@ async def get_model(model_id: int, db: AsyncSession = Depends(get_db), current_u
 
 
 @router.post("/", response_model=LLMModelResponse, status_code=status.HTTP_201_CREATED)
-async def create_model(req: LLMModelCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def create_model(req: LLMModelCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_data_manager)):
     try:
         data = req.model_dump()
         data["api_key"] = encrypt_api_key(data.get("api_key", ""))
@@ -77,7 +77,7 @@ async def create_model(req: LLMModelCreate, db: AsyncSession = Depends(get_db), 
 
 
 @router.put("/{model_id}", response_model=LLMModelResponse)
-async def update_model(model_id: int, req: LLMModelUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def update_model(model_id: int, req: LLMModelUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_data_manager)):
     try:
         result = await db.execute(select(LLMModel).where(LLMModel.id == model_id))
         model = result.scalar_one_or_none()
@@ -99,7 +99,7 @@ async def update_model(model_id: int, req: LLMModelUpdate, db: AsyncSession = De
 
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_model(model_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def delete_model(model_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_data_manager)):
     try:
         result = await db.execute(select(LLMModel).where(LLMModel.id == model_id))
         model = result.scalar_one_or_none()

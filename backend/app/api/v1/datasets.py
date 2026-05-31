@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_data_manager, require_approver
 from app.models.user import User
 from app.models.dataset import Dataset, DatasetItem
 from app.schemas.dataset import (
@@ -123,7 +123,7 @@ async def get_dataset(
 async def create_dataset(
     req: DatasetCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_data_manager),
 ):
     try:
         dataset = Dataset(
@@ -180,7 +180,7 @@ async def update_dataset(
     dataset_id: int,
     req: DatasetUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_data_manager),
 ):
     try:
         result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
@@ -272,7 +272,7 @@ async def update_dataset(
 async def delete_dataset(
     dataset_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_data_manager),
 ):
     try:
         result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
@@ -296,7 +296,7 @@ async def delete_dataset(
 async def submit_dataset_review(
     dataset_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_approver),
 ):
     try:
         result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
@@ -323,7 +323,7 @@ async def review_dataset(
     dataset_id: int,
     req: DatasetReview,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_approver),
 ):
     try:
         result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
@@ -428,7 +428,7 @@ async def add_dataset_items(
     dataset_id: int,
     items: list[DatasetItemCreate],
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_data_manager),
 ):
     try:
         dataset_result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
@@ -504,7 +504,7 @@ async def delete_dataset_item(
     dataset_id: int,
     item_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_data_manager),
 ):
     try:
         result = await db.execute(
@@ -538,7 +538,7 @@ async def import_dataset_items(
     dataset_id: int,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_data_manager),
 ):
     """批量导入数据 — 支持 CSV / JSONL / Excel"""
     from app.utils.importer import detect_and_parse

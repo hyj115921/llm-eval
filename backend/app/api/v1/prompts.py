@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_task_executor
 from app.models.user import User
 from app.models.prompt import Prompt, PromptVersion
 from app.models.optimization import OptimizationTask, OptimizationRound
@@ -118,7 +118,7 @@ async def get_prompt(
 async def create_prompt(
     req: PromptCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         prompt = Prompt(
@@ -169,7 +169,7 @@ async def update_prompt(
     prompt_id: int,
     req: PromptUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         result = await db.execute(select(Prompt).where(Prompt.id == prompt_id))
@@ -229,7 +229,7 @@ async def update_prompt(
 async def delete_prompt(
     prompt_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         result = await db.execute(select(Prompt).where(Prompt.id == prompt_id))
@@ -353,7 +353,7 @@ async def list_optimization_tasks(
 async def create_optimization_task(
     req: OptimizationTaskCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         # 校验数据集已发布
@@ -472,7 +472,7 @@ async def get_optimization_task(
 async def start_optimization(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         # 1. 查询优化任务
@@ -582,7 +582,7 @@ async def start_optimization(
 async def cancel_optimization(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         result = await db.execute(select(OptimizationTask).where(OptimizationTask.id == task_id))

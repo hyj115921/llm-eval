@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from app.core.database import get_db, async_session
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_task_executor
 from app.models.user import User
 from app.models.eval_task import EvalTask, EvalResult
 from app.models.dataset import Dataset, DatasetItem
@@ -135,7 +135,7 @@ async def get_eval_task(
 async def create_eval_task(
     req: EvalTaskCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         # 校验数据集存在且已发布
@@ -208,7 +208,7 @@ async def create_eval_task(
 async def start_eval_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     import logging
     logger = logging.getLogger(__name__)
@@ -325,7 +325,7 @@ async def start_eval_task(
 async def cancel_eval_task(
     task_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_task_executor),
 ):
     try:
         result = await db.execute(select(EvalTask).where(EvalTask.id == task_id))

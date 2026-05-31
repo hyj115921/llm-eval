@@ -58,3 +58,27 @@ async def get_current_admin(current_user: User = Depends(get_current_user)) -> U
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
     return current_user
+
+
+async def require_data_manager(current_user: User = Depends(get_current_user)) -> User:
+    """需要数据管理权限（admin / evaluator）才能创建/修改/删除数据集和指标"""
+    from app.core.permissions import can_manage_data
+    if not can_manage_data(current_user.role):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要数据管理权限（管理员或评测管理员）")
+    return current_user
+
+
+async def require_task_executor(current_user: User = Depends(get_current_user)) -> User:
+    """需要任务执行权限（admin / evaluator / developer）才能创建/启动评测和优化"""
+    from app.core.permissions import can_execute_task
+    if not can_execute_task(current_user.role):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要任务执行权限")
+    return current_user
+
+
+async def require_approver(current_user: User = Depends(get_current_user)) -> User:
+    """需要审核权限（admin / evaluator）才能审核数据集和指标"""
+    from app.core.permissions import can_approve
+    if not can_approve(current_user.role):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要审核权限（管理员或评测管理员）")
+    return current_user
