@@ -45,23 +45,30 @@ function LeaderboardPage() {
   useEffect(() => {
     if (!data) return;
 
+    const charts: echarts.ECharts[] = [];
+
     // 柱状图：分数对比
     if (barRef.current) {
       const chart = echarts.init(barRef.current);
       chart.setOption({
         tooltip: { trigger: 'axis' },
         legend: { data: ['综合得分', '延迟(ms)'] },
-        xAxis: { type: 'category', data: data.charts.comparison.names },
+        xAxis: {
+          type: 'category',
+          data: data.charts.comparison.names,
+          axisLabel: { rotate: 0, interval: 0 },
+        },
         yAxis: [
           { type: 'value', name: '得分', min: 0, max: 1 },
           { type: 'value', name: '延迟(ms)' },
         ],
+        grid: { bottom: 60 },
         series: [
           {
             name: '综合得分', type: 'bar',
             data: data.charts.comparison.scores,
             itemStyle: { color: '#1677ff' },
-            label: { show: true, position: 'top', formatter: '{c:.2f}' },
+            label: { show: true, position: 'top', formatter: (p: { value: number }) => p.value.toFixed(2) },
           },
           {
             name: '延迟(ms)', type: 'bar',
@@ -72,7 +79,7 @@ function LeaderboardPage() {
           },
         ],
       });
-      return () => chart.dispose();
+      charts.push(chart);
     }
 
     // 雷达图：综合对比
@@ -83,18 +90,24 @@ function LeaderboardPage() {
         tooltip: {},
         legend: { data: data.tasks.map((t) => t.model_name) },
         radar: {
-          indicator: metrics.map((m) => ({ name: m.toUpperCase(), max: 1 })),
+          indicator: metrics.length > 0
+            ? metrics.map((m) => ({ name: m.toUpperCase(), max: 1 }))
+            : [{ name: 'score', max: 1 }],
         },
         series: [{
           type: 'radar',
           data: data.tasks.map((t) => ({
             name: t.model_name,
-            value: metrics.map((m) => t.metric_scores[m]?.avg || 0),
+            value: metrics.length > 0
+              ? metrics.map((m) => t.metric_scores[m]?.avg || 0)
+              : [t.overall_score],
           })),
         }],
       });
-      return () => chart.dispose();
+      charts.push(chart);
     }
+
+    return () => charts.forEach((c) => c.dispose());
   }, [data]);
 
   const columns: ColumnsType<ModelEntry> = [

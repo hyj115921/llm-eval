@@ -1,3 +1,4 @@
+import json
 import logging
 from datetime import datetime
 
@@ -57,6 +58,7 @@ async def list_prompts(
                 current_version=p.current_version,
                 current_content=p.current_content,
                 best_score=p.best_score,
+                source=p.source,
                 project_id=p.project_id,
                 created_by=p.created_by,
                 created_at=p.created_at,
@@ -100,6 +102,7 @@ async def get_prompt(
             current_version=prompt.current_version,
             current_content=prompt.current_content,
             best_score=prompt.best_score,
+            source=prompt.source,
             project_id=prompt.project_id,
             created_by=prompt.created_by,
             created_at=prompt.created_at,
@@ -127,6 +130,7 @@ async def create_prompt(
             scene=req.scene or "general",
             current_content=req.content or "",
             current_version="v1",
+            source=getattr(req, "source", "prompt_page") or "prompt_page",
             created_by=current_user.id,
             project_id=req.project_id,
         )
@@ -153,6 +157,7 @@ async def create_prompt(
             current_version=prompt.current_version,
             current_content=prompt.current_content,
             best_score=prompt.best_score,
+            source=prompt.source,
             project_id=prompt.project_id,
             created_by=prompt.created_by,
             created_at=prompt.created_at,
@@ -214,6 +219,7 @@ async def update_prompt(
             current_version=prompt.current_version,
             current_content=prompt.current_content,
             best_score=prompt.best_score,
+            source=prompt.source,
             project_id=prompt.project_id,
             created_by=prompt.created_by,
             created_at=prompt.created_at,

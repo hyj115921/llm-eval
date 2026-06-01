@@ -36,7 +36,7 @@ async def health_check():
 
 
 # 注册路由
-from app.api.v1 import auth, users, models, datasets, metrics, evals, prompts, projects, reports, audit_logs
+from app.api.v1 import auth, users, models, datasets, metrics, evals, prompts, projects, reports, audit_logs, ws
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["用户管理"])
@@ -48,3 +48,4 @@ app.include_router(prompts.router, prefix="/api/v1/prompts", tags=["Prompt调优
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["项目管理"])
 app.include_router(reports.router, prefix="/api/v1/reports", tags=["评测报告"])
 app.include_router(audit_logs.router, prefix="/api/v1/audit-logs", tags=["审计日志"])
+app.include_router(ws.router, prefix="/api/v1/ws", tags=["WebSocket"])

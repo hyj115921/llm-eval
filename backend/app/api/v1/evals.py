@@ -16,7 +16,7 @@ from app.schemas.eval import EvalTaskCreate, EvalTaskResponse, EvalResultRespons
 from app.schemas.common import PaginatedResponse
 from .demo_data import DEMO_EVAL_TASKS, get_demo_list, paginated
 from app.utils.audit import audit_log, ACTION_EVAL_CREATE, ACTION_EVAL_START, \
-    ACTION_EVAL_CANCEL
+    ACTION_EVAL_CANCEL, ACTION_EVAL_DELETE
 
 router = APIRouter(tags=["evals"])
 
@@ -156,14 +156,54 @@ async def create_eval_task(
                 if m.status != "approved":
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"评测标准 '{m.name}' 状态为 '{m.status}'，只有已审核的标准才能用于评测")
 
+        # 处理 Prompt：引用已有 或 手动创建
+        prompt_id = req.prompt_id
+        prompt_content = req.prompt_content or ""
+
+        if prompt_id:
+            # 引用已有 Prompt — 读取其内容
+            from app.models.prompt import Prompt as PromptModel
+            p_result = await db.execute(select(PromptModel).where(PromptModel.id == prompt_id))
+            prompt = p_result.scalar_one_or_none()
+            if not prompt:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="引用的 Prompt 不存在")
+            if not prompt_content:
+                prompt_content = prompt.current_content or ""
+        elif prompt_content.strip():
+            # 手动输入 — 自动创建 Prompt 记录，标记来源为 eval_task
+            from app.models.prompt import Prompt as PromptModel, PromptVersion
+            prompt_name = req.name + " - Prompt"
+            prompt = PromptModel(
+                name=prompt_name,
+                description=f"从评测任务「{req.name}」自动创建",
+                scene="general",
+                current_content=prompt_content,
+                current_version="v1",
+                source="eval_task",
+                created_by=current_user.id,
+                project_id=req.project_id,
+            )
+            db.add(prompt)
+            await db.flush()
+            version = PromptVersion(
+                prompt_id=prompt.id,
+                version="v1",
+                content=prompt_content,
+                score=0.0,
+                source="initial",
+            )
+            db.add(version)
+            await db.flush()
+            prompt_id = prompt.id
+
         task = EvalTask(
             name=req.name,
             project_id=req.project_id,
             model_id=req.model_id,
             dataset_id=req.dataset_id,
             metric_ids=req.metric_ids or "",
-            prompt_content=req.prompt_content or "",
-            prompt_id=req.prompt_id,
+            prompt_content=prompt_content,
+            prompt_id=prompt_id,
             schedule_type=req.schedule_type or "immediate",
             cron_expression=req.cron_expression or "",
             total_items=dataset.item_count,
@@ -260,8 +300,9 @@ async def start_eval_task(
 
         # 5. 清理旧结果（重跑时）并更新状态
         if task.completed_items > 0:
+            from sqlalchemy import text
             await db.execute(
-                "DELETE FROM eval_results WHERE eval_task_id = :tid", {"tid": task_id}
+                text("DELETE FROM eval_results WHERE eval_task_id = :tid"), {"tid": task_id}
             )
             await db.commit()
         task.status = "running"
@@ -379,6 +420,37 @@ async def cancel_eval_task(
         raise
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Demo模式不支持此操作")
+
+
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_eval_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_task_executor),
+):
+    try:
+        result = await db.execute(select(EvalTask).where(EvalTask.id == task_id))
+        task = result.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="评估任务不存在")
+
+        # 删除关联的评测结果
+        from sqlalchemy import text
+        await db.execute(
+            text("DELETE FROM eval_results WHERE eval_task_id = :tid"), {"tid": task_id}
+        )
+        await db.delete(task)
+        await db.commit()
+
+        await audit_log(db, current_user.id, current_user.username,
+                        ACTION_EVAL_DELETE, target_type="eval_task",
+                        target_id=task_id, detail=f"删除评估任务: {task.name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("删除评估任务失败: %s", e)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"删除失败: {str(e)}")
 
 
 @router.get("/{task_id}/results", response_model=PaginatedResponse)

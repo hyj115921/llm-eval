@@ -9,6 +9,7 @@ class PromptCreate(BaseModel):
     scene: str = "general"
     content: str = ""
     project_id: Optional[int] = None
+    source: str = "prompt_page"  # prompt_page / eval_task
 
 
 class PromptUpdate(BaseModel):
@@ -25,6 +26,7 @@ class PromptResponse(BaseModel):
     current_version: str
     current_content: str
     best_score: float
+    source: str = "prompt_page"
     project_id: Optional[int]
     created_by: Optional[int]
     created_at: datetime

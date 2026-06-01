@@ -16,8 +16,11 @@ function PromptOptimization() {
   const navigate = useNavigate();
   const [task, setTask] = useState<OptimizationTask | null>(null);
   const [rounds, setRounds] = useState<OptimizationRound[]>([]);
+  const [scoreHistory, setScoreHistory] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const chartRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const prevRoundRef = useRef<number>(0);
 
   const fetchTask = useCallback(async () => {
     if (!id) return;
@@ -50,40 +53,95 @@ function PromptOptimization() {
   }, [fetchTask, fetchRounds]);
 
   useEffect(() => {
+    if (!task || task.status !== 'running') return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/optimization/${task.id}`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'opt_progress') {
+          setTask((prev) => prev ? {
+            ...prev,
+            status: data.status,
+            current_round: data.current_round,
+            max_rounds: data.max_rounds,
+            best_score: data.best_score,
+            baseline_score: data.baseline_score,
+            best_prompt: data.best_prompt,
+            error_message: data.error_message,
+          } : prev);
+          if (data.score_history_json) {
+            try {
+              setScoreHistory(JSON.parse(data.score_history_json));
+            } catch { /* ignore */ }
+          }
+          if (data.current_round !== prevRoundRef.current) {
+            prevRoundRef.current = data.current_round;
+            fetchRounds();
+          }
+          if (['completed', 'failed', 'cancelled'].includes(data.status)) {
+            ws.close();
+            fetchRounds();
+          }
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    ws.onerror = () => { ws.close(); };
+    return () => { ws.close(); };
+  }, [task?.id, task?.status, fetchRounds]);
+
+  // WebSocket 不推送轮次详情，运行中每 5s 拉取一次
+  useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
     if (task && task.status === 'running') {
-      interval = setInterval(() => {
-        fetchTask();
-        fetchRounds();
-      }, 3000);
+      interval = setInterval(() => fetchRounds(), 5000);
     }
     return () => { if (interval) clearInterval(interval); };
-  }, [task?.status, fetchTask, fetchRounds]);
+  }, [task?.status, fetchRounds]);
 
   useEffect(() => {
-    if (!chartRef.current || rounds.length === 0) return;
+    if (!chartRef.current) return;
+    if (rounds.length === 0 && scoreHistory.length === 0) return;
     const chart = echarts.init(chartRef.current);
     const sortedRounds = [...rounds].sort((a, b) => a.round_number - b.round_number);
+    const series: any[] = [];
+    if (scoreHistory.length > 0) {
+      series.push({
+        name: '最佳得分', type: 'line',
+        data: scoreHistory,
+        lineStyle: { color: '#1677ff' },
+        itemStyle: { color: '#1677ff' },
+        smooth: true,
+      });
+    }
+    if (sortedRounds.length > 0) {
+      series.push({
+        name: '优化前', type: 'line',
+        data: sortedRounds.map((r) => r.score_before),
+        lineStyle: { color: '#ff4d4f' },
+        itemStyle: { color: '#ff4d4f' },
+      });
+      series.push({
+        name: '优化后', type: 'line',
+        data: sortedRounds.map((r) => r.score_after),
+        lineStyle: { color: '#52c41a' },
+        itemStyle: { color: '#52c41a' },
+      });
+    }
+    const xData = sortedRounds.length > 0
+      ? sortedRounds.map((r) => `第${r.round_number}轮`)
+      : scoreHistory.map((_, i) => `第${i + 1}轮`);
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { data: ['优化前', '优化后'] },
-      xAxis: { type: 'category', data: sortedRounds.map((r) => `第${r.round_number}轮`) },
+      legend: { data: series.map((s: any) => s.name) },
+      xAxis: { type: 'category', data: xData },
       yAxis: { type: 'value', name: '分数' },
-      series: [
-        {
-          name: '优化前', type: 'line',
-          data: sortedRounds.map((r) => r.score_before),
-          lineStyle: { color: '#ff4d4f' },
-        },
-        {
-          name: '优化后', type: 'line',
-          data: sortedRounds.map((r) => r.score_after),
-          lineStyle: { color: '#52c41a' },
-        },
-      ],
+      series,
     });
     return () => chart.dispose();
-  }, [rounds]);
+  }, [rounds, scoreHistory]);
 
   const handleStart = async () => {
     if (!id) return;
@@ -184,7 +242,7 @@ function PromptOptimization() {
           </Card>
 
           <Card title="得分历史" style={{ marginBottom: 16 }}>
-            {rounds.length > 0 ? (
+            {rounds.length > 0 || scoreHistory.length > 0 ? (
               <div ref={chartRef} style={{ height: 300 }} />
             ) : (
               <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无数据</div>

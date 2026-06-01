@@ -58,7 +58,7 @@ function EvalReportPage() {
       chart.setOption({
         tooltip: { trigger: 'axis' },
         xAxis: { type: 'category', data: mc.metrics },
-        yAxis: { type: 'value', name: '平均分', max: 100 },
+        yAxis: { type: 'value', name: '平均分', max: 1 },
         series: [{ data: mc.avg_scores, type: 'bar', itemStyle: { color: '#52c41a' } }],
       });
       return () => chart.dispose();

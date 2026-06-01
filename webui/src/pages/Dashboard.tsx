@@ -19,8 +19,6 @@ function Dashboard() {
 
   const scoreChartRef = useRef<HTMLDivElement>(null);
   const pieChartRef = useRef<HTMLDivElement>(null);
-  const statusChartRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
@@ -49,12 +47,17 @@ function Dashboard() {
     if (scoreChartRef.current && evalTasks.length > 0) {
       const chart = echarts.init(scoreChartRef.current);
       const tasksWithScore = evalTasks.filter((t) => t.overall_score != null);
-      const names = tasksWithScore.map((t) => t.name.length > 15 ? t.name.substring(0, 15) + '...' : t.name);
+      const names = tasksWithScore.map((t) => t.name.split('-').slice(1).join('-'));
       const scores = tasksWithScore.map((t) => t.overall_score);
       chart.setOption({
         tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: names, axisLabel: { rotate: 30 } },
-        yAxis: { type: 'value', name: '分数', max: 100 },
+        grid: { bottom: 40, left: 60, right: 20, top: 20 },
+        xAxis: {
+          type: 'category',
+          data: names,
+          axisLabel: { rotate: 0, fontSize: 11, interval: 0 },
+        },
+        yAxis: { type: 'value', min: 0, max: 1 },
         series: [{ data: scores, type: 'bar', itemStyle: { color: '#1677ff' } }],
       });
       return () => chart.dispose();
@@ -82,25 +85,18 @@ function Dashboard() {
     }
   }, [models]);
 
-  useEffect(() => {
-    if (statusChartRef.current && evalTasks.length > 0) {
-      const chart = echarts.init(statusChartRef.current);
-      const statusMap: Record<string, number> = {};
-      evalTasks.forEach((t) => {
-        statusMap[t.status] = (statusMap[t.status] || 0) + 1;
-      });
-      chart.setOption({
-        tooltip: { trigger: 'item' },
-        series: [
-          {
-            type: 'pie',
-            data: Object.entries(statusMap).map(([name, value]) => ({ name, value })),
-          },
-        ],
-      });
-      return () => chart.dispose();
-    }
-  }, [evalTasks]);
+  const statusConfig: Record<string, { label: string; color: string }> = {
+    completed: { label: '已完成', color: '#52c41a' },
+    running: { label: '运行中', color: '#1677ff' },
+    pending: { label: '等待中', color: '#faad14' },
+    failed: { label: '失败', color: '#ff4d4f' },
+    cancelled: { label: '已取消', color: '#999' },
+  };
+
+  const statusCounts: Record<string, number> = {};
+  evalTasks.forEach((t) => {
+    statusCounts[t.status] = (statusCounts[t.status] || 0) + 1;
+  });
 
   if (loading) {
     return (
@@ -184,7 +180,24 @@ function Dashboard() {
         <Col span={24}>
           <Card title="任务状态概览">
             {evalTasks.length > 0 ? (
-              <div ref={statusChartRef} style={{ height: 300 }} />
+              <Row gutter={[16, 16]} style={{ padding: '8px 0' }}>
+                {evalTasks.map((t) => {
+                  const cfg = statusConfig[t.status] || { label: t.status, color: '#666' };
+                  return (
+                    <Col xs={24} sm={12} md={8} key={t.id}>
+                      <Card size="small" style={{ borderLeft: `4px solid ${cfg.color}` }}>
+                        <div style={{ fontSize: 13, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={t.name}>{t.name}</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 22, fontWeight: 700, color: cfg.color }}>
+                            {t.overall_score != null ? t.overall_score.toFixed(2) : '-'}
+                          </span>
+                          <span style={{ fontSize: 12, color: cfg.color, background: cfg.color + '18', padding: '2px 8px', borderRadius: 10 }}>{cfg.label}</span>
+                        </div>
+                      </Card>
+                    </Col>
+                  );
+                })}
+              </Row>
             ) : (
               <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无数据</div>
             )}

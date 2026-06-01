@@ -6,7 +6,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from 
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import { promptsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI } from '../services/api';
-import type { Prompt, OptimizationTask, Project, LLMModel, Dataset, Metric } from '../types';
+import type { Prompt, PromptVersion, OptimizationTask, Project, LLMModel, Dataset, Metric } from '../types';
 
 interface OptTaskDisplay {
   id: number;
@@ -32,6 +32,10 @@ function PromptsPage() {
   const [metricsList, setMetricsList] = useState<Metric[]>([]);
   const [promptForm] = Form.useForm();
   const [optForm] = Form.useForm();
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [versions, setVersions] = useState<PromptVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
 
   const fetchPrompts = async () => {
     setLoading(true);
@@ -99,6 +103,9 @@ function PromptsPage() {
   const handleOptSubmit = async () => {
     try {
       const values = await optForm.validateFields();
+      if (Array.isArray(values.metric_ids)) {
+        values.metric_ids = values.metric_ids.join(',');
+      }
       const res = await promptsAPI.createOptimization(values);
       message.success('优化任务创建成功');
       setOptModalOpen(false);
@@ -123,6 +130,20 @@ function PromptsPage() {
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } } };
       message.error(error?.response?.data?.detail || '删除失败');
+    }
+  };
+
+  const handleShowVersions = async (record: Prompt) => {
+    setSelectedPrompt(record);
+    setVersionModalOpen(true);
+    setVersionsLoading(true);
+    try {
+      const res = await promptsAPI.versions(record.id);
+      setVersions(res.data.items || []);
+    } catch {
+      setVersions([]);
+    } finally {
+      setVersionsLoading(false);
     }
   };
 
@@ -159,6 +180,17 @@ function PromptsPage() {
     },
     { title: '版本', dataIndex: 'current_version', key: 'current_version', width: 80 },
     {
+      title: '来源', dataIndex: 'source', key: 'source', width: 100,
+      render: (s: string) => {
+        const map: Record<string, { label: string; color: string }> = {
+          prompt_page: { label: 'Prompt页面', color: 'blue' },
+          eval_task: { label: '评测任务', color: 'green' },
+        };
+        const info = map[s] || { label: s || '-', color: 'default' };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      },
+    },
+    {
       title: '操作',
       key: 'actions',
       width: 280,
@@ -191,7 +223,7 @@ function PromptsPage() {
           >
             优化
           </Button>
-          <Button type="link" onClick={() => message.info('版本历史功能开发中')}>
+          <Button type="link" onClick={() => handleShowVersions(record)}>
             版本
           </Button>
           <Popconfirm title="确定删除？" onConfirm={() => handleDeletePrompt(record.id)}>
@@ -394,6 +426,44 @@ function PromptsPage() {
             <Input type="number" min={0} max={20} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={selectedPrompt ? `版本历史 - ${selectedPrompt.name}` : '版本历史'}
+        open={versionModalOpen}
+        onCancel={() => setVersionModalOpen(false)}
+        footer={null}
+        width={800}
+      >
+        <Table
+          dataSource={versions}
+          rowKey="id"
+          loading={versionsLoading}
+          pagination={{ pageSize: 10 }}
+          columns={[
+            { title: '版本', dataIndex: 'version', key: 'version', width: 80 },
+            { title: '得分', dataIndex: 'score', key: 'score', width: 80, render: (v: number) => v?.toFixed(4) || '-' },
+            {
+              title: '来源', dataIndex: 'source', key: 'source', width: 80,
+              render: (s: string) => {
+                const map: Record<string, string> = { initial: '初始', manual: '手动', optimization: '优化' };
+                return <Tag>{map[s] || s}</Tag>;
+              },
+            },
+            {
+              title: '内容', dataIndex: 'content', key: 'content', ellipsis: true,
+              render: (c: string) => (
+                <div style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {c}
+                </div>
+              ),
+            },
+            {
+              title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 160,
+              render: (v: string) => v ? new Date(v).toLocaleString() : '-',
+            },
+          ]}
+        />
       </Modal>
     </div>
   );

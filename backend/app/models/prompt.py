@@ -15,6 +15,7 @@ class Prompt(Base):
     current_version: Mapped[str] = mapped_column(String(32), default="v1")
     current_content: Mapped[str] = mapped_column(Text, default="")
     best_score: Mapped[float] = mapped_column(Float, default=0.0)
+    source: Mapped[str] = mapped_column(String(32), default="prompt_page")  # prompt_page / eval_task
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

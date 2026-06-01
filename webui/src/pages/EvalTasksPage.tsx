@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Table, Button, Modal, Form, Input, Select, Space, Tag, message,
+  Table, Button, Modal, Form, Input, Select, Space, Tag, message, Radio,
 } from 'antd';
-import { PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, BarChartOutlined } from '@ant-design/icons';
+import { PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, BarChartOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { evalsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI } from '../services/api';
-import type { EvalTask, Project, LLMModel, Dataset, Metric } from '../types';
+import { evalsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI, promptsAPI } from '../services/api';
+import type { EvalTask, Project, LLMModel, Dataset, Metric, Prompt } from '../types';
 
 function EvalTasksPage() {
   const navigate = useNavigate();
@@ -18,6 +18,9 @@ function EvalTasksPage() {
   const [models, setModels] = useState<LLMModel[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [metricsList, setMetricsList] = useState<Metric[]>([]);
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [promptMode, setPromptMode] = useState<'manual' | 'select'>('manual');
+  const wsRefs = useRef<Map<number, WebSocket>>(new Map());
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -34,16 +37,18 @@ function EvalTasksPage() {
 
   const fetchRefs = async () => {
     try {
-      const [pjRes, mdRes, dsRes, mtRes] = await Promise.all([
+      const [pjRes, mdRes, dsRes, mtRes, ptRes] = await Promise.all([
         projectsAPI.list(1, 100),
         modelsAPI.list(1, 100),
         datasetsAPI.list(1, 100),
         metricsAPI.list(1, 100),
+        promptsAPI.list(1, 100),
       ]);
       setProjects(pjRes.data.items || []);
       setModels(mdRes.data.items || []);
       setDatasets(dsRes.data.items || []);
       setMetricsList(mtRes.data.items || []);
+      setPrompts(ptRes.data.items || []);
     } catch {
       // ignore
     }
@@ -53,12 +58,71 @@ function EvalTasksPage() {
     fetchTasks();
   }, []);
 
+  const runningIds = tasks.filter((t) => t.status === 'running' || t.status === 'pending').map((t) => t.id).join(',');
+
+  useEffect(() => {
+    const runningTasks = tasks.filter((t) => t.status === 'running' || t.status === 'pending');
+    if (runningTasks.length === 0) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+    for (const task of runningTasks) {
+      if (wsRefs.current.has(task.id)) continue;
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/eval/${task.id}`;
+      const ws = new WebSocket(wsUrl);
+      wsRefs.current.set(task.id, ws);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'eval_progress') {
+            setTasks((prev) => prev.map((t) =>
+              t.id === data.task_id
+                ? { ...t, status: data.status, completed_items: data.completed_items, total_items: data.total_items, overall_score: data.overall_score, error_message: data.error_message }
+                : t
+            ));
+            if (['completed', 'failed', 'cancelled'].includes(data.status)) {
+              ws.close();
+              wsRefs.current.delete(task.id);
+            }
+          }
+        } catch { /* ignore */ }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+        wsRefs.current.delete(task.id);
+      };
+
+      ws.onclose = () => {
+        wsRefs.current.delete(task.id);
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningIds]);
+
+  useEffect(() => {
+    return () => {
+      for (const ws of wsRefs.current.values()) {
+        ws.close();
+      }
+      wsRefs.current.clear();
+    };
+  }, []);
+
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
       const payload = { ...values };
       if (Array.isArray(payload.metric_ids)) {
         payload.metric_ids = payload.metric_ids.join(',');
+      }
+      if (promptMode === 'select') {
+        // 引用已有 Prompt — 传 prompt_id，不传 prompt_content
+        payload.prompt_id = values.prompt_id;
+        payload.prompt_content = '';
+      } else {
+        // 手动输入 — 传 prompt_content，后端会自动创建 Prompt
+        payload.prompt_id = null;
       }
       await evalsAPI.create(payload);
       message.success('创建成功');
@@ -91,6 +155,26 @@ function EvalTasksPage() {
       const error = err as { response?: { data?: { detail?: string } } };
       message.error(error?.response?.data?.detail || '操作失败');
     }
+  };
+
+  const handleDelete = (id: number, name: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除评测任务「${name}」吗？删除后不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await evalsAPI.delete(id);
+          message.success('任务已删除');
+          fetchTasks();
+        } catch (err: unknown) {
+          const error = err as { response?: { data?: { detail?: string } } };
+          message.error(error?.response?.data?.detail || '删除失败');
+        }
+      },
+    });
   };
 
   const statusTag = (status: string) => {
@@ -151,6 +235,9 @@ function EvalTasksPage() {
           <Button type="link" icon={<BarChartOutlined />} onClick={() => navigate(`/eval-tasks/${record.id}/report`)}>
             报告
           </Button>
+          <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id, record.name)}>
+            删除
+          </Button>
         </Space>
       ),
     },
@@ -203,8 +290,35 @@ function EvalTasksPage() {
               {metricsList.map((m) => <Select.Option key={m.id} value={m.id}>{m.name}</Select.Option>)}
             </Select>
           </Form.Item>
-          <Form.Item name="prompt_content" label="Prompt内容">
-            <Input.TextArea rows={5} placeholder="{input} 会被替换为数据集中的输入文本" />
+          <Form.Item label="Prompt来源">
+            <Radio.Group value={promptMode} onChange={(e) => { setPromptMode(e.target.value); form.setFieldValue('prompt_id', undefined); form.setFieldValue('prompt_content', ''); }}>
+              <Radio.Button value="select">引用已有 Prompt</Radio.Button>
+              <Radio.Button value="manual">手动输入</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          {promptMode === 'select' ? (
+            <Form.Item name="prompt_id" label="选择Prompt" rules={[{ required: true, message: '请选择Prompt' }]}>
+              <Select
+                placeholder="选择已有的Prompt"
+                onChange={(val) => {
+                  const p = prompts.find((x) => x.id === val);
+                  if (p) form.setFieldValue('prompt_content', p.current_content);
+                }}
+              >
+                {prompts.map((p) => (
+                  <Select.Option key={p.id} value={p.id}>
+                    {p.name} ({p.current_version}) — 得分: {p.best_score?.toFixed(2) || '-'}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          ) : (
+            <Form.Item name="prompt_content" label="Prompt内容">
+              <Input.TextArea rows={5} placeholder="{input} 会被替换为数据集中的输入文本" />
+            </Form.Item>
+          )}
+          <Form.Item name="prompt_content" hidden>
+            <Input />
           </Form.Item>
         </Form>
       </Modal>
