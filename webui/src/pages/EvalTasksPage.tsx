@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table, Button, Modal, Form, Input, Select, Space, Tag, message, Radio,
@@ -20,6 +20,7 @@ function EvalTasksPage() {
   const [metricsList, setMetricsList] = useState<Metric[]>([]);
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [promptMode, setPromptMode] = useState<'manual' | 'select'>('manual');
+  const wsRefs = useRef<Map<number, WebSocket>>(new Map());
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -55,6 +56,57 @@ function EvalTasksPage() {
 
   useEffect(() => {
     fetchTasks();
+  }, []);
+
+  const runningIds = tasks.filter((t) => t.status === 'running' || t.status === 'pending').map((t) => t.id).join(',');
+
+  useEffect(() => {
+    const runningTasks = tasks.filter((t) => t.status === 'running' || t.status === 'pending');
+    if (runningTasks.length === 0) return;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+    for (const task of runningTasks) {
+      if (wsRefs.current.has(task.id)) continue;
+      const wsUrl = `${protocol}//${window.location.host}/api/v1/ws/eval/${task.id}`;
+      const ws = new WebSocket(wsUrl);
+      wsRefs.current.set(task.id, ws);
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'eval_progress') {
+            setTasks((prev) => prev.map((t) =>
+              t.id === data.task_id
+                ? { ...t, status: data.status, completed_items: data.completed_items, total_items: data.total_items, overall_score: data.overall_score, error_message: data.error_message }
+                : t
+            ));
+            if (['completed', 'failed', 'cancelled'].includes(data.status)) {
+              ws.close();
+              wsRefs.current.delete(task.id);
+            }
+          }
+        } catch { /* ignore */ }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+        wsRefs.current.delete(task.id);
+      };
+
+      ws.onclose = () => {
+        wsRefs.current.delete(task.id);
+      };
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runningIds]);
+
+  useEffect(() => {
+    return () => {
+      for (const ws of wsRefs.current.values()) {
+        ws.close();
+      }
+      wsRefs.current.clear();
+    };
   }, []);
 
   const handleCreate = async () => {
