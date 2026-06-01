@@ -69,6 +69,7 @@ ACTION_MODEL_DELETE = "model.delete"
 ACTION_EVAL_CREATE = "eval.create"
 ACTION_EVAL_START = "eval.start"
 ACTION_EVAL_CANCEL = "eval.cancel"
+ACTION_EVAL_DELETE = "eval.delete"
 
 # Prompt 优化
 ACTION_OPTIMIZATION_CREATE = "optimization.create"

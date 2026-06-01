@@ -16,7 +16,7 @@ from app.schemas.eval import EvalTaskCreate, EvalTaskResponse, EvalResultRespons
 from app.schemas.common import PaginatedResponse
 from .demo_data import DEMO_EVAL_TASKS, get_demo_list, paginated
 from app.utils.audit import audit_log, ACTION_EVAL_CREATE, ACTION_EVAL_START, \
-    ACTION_EVAL_CANCEL
+    ACTION_EVAL_CANCEL, ACTION_EVAL_DELETE
 
 router = APIRouter(tags=["evals"])
 
@@ -260,8 +260,9 @@ async def start_eval_task(
 
         # 5. 清理旧结果（重跑时）并更新状态
         if task.completed_items > 0:
+            from sqlalchemy import text
             await db.execute(
-                "DELETE FROM eval_results WHERE eval_task_id = :tid", {"tid": task_id}
+                text("DELETE FROM eval_results WHERE eval_task_id = :tid"), {"tid": task_id}
             )
             await db.commit()
         task.status = "running"
@@ -379,6 +380,37 @@ async def cancel_eval_task(
         raise
     except Exception:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Demo模式不支持此操作")
+
+
+@router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_eval_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_task_executor),
+):
+    try:
+        result = await db.execute(select(EvalTask).where(EvalTask.id == task_id))
+        task = result.scalar_one_or_none()
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="评估任务不存在")
+
+        # 删除关联的评测结果
+        from sqlalchemy import text
+        await db.execute(
+            text("DELETE FROM eval_results WHERE eval_task_id = :tid"), {"tid": task_id}
+        )
+        await db.delete(task)
+        await db.commit()
+
+        await audit_log(db, current_user.id, current_user.username,
+                        ACTION_EVAL_DELETE, target_type="eval_task",
+                        target_id=task_id, detail=f"删除评估任务: {task.name}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("删除评估任务失败: %s", e)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=f"删除失败: {str(e)}")
 
 
 @router.get("/{task_id}/results", response_model=PaginatedResponse)

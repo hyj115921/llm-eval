@@ -94,6 +94,7 @@ export const evalsAPI = {
   create: (data: any) => api.post('/evals/', data),
   start: (id: number) => api.post(`/evals/${id}/start`),
   cancel: (id: number) => api.post(`/evals/${id}/cancel`),
+  delete: (id: number) => api.delete(`/evals/${id}`),
   results: (id: number, page = 1, pageSize = 50) =>
     api.get(`/evals/${id}/results`, { params: { page, page_size: pageSize } }),
 };

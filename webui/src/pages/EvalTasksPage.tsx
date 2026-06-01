@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Table, Button, Modal, Form, Input, Select, Space, Tag, message,
 } from 'antd';
-import { PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, BarChartOutlined } from '@ant-design/icons';
+import { PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, BarChartOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { evalsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI } from '../services/api';
 import type { EvalTask, Project, LLMModel, Dataset, Metric } from '../types';
@@ -93,6 +93,26 @@ function EvalTasksPage() {
     }
   };
 
+  const handleDelete = (id: number, name: string) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: `确定要删除评测任务「${name}」吗？删除后不可恢复。`,
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await evalsAPI.delete(id);
+          message.success('任务已删除');
+          fetchTasks();
+        } catch (err: unknown) {
+          const error = err as { response?: { data?: { detail?: string } } };
+          message.error(error?.response?.data?.detail || '删除失败');
+        }
+      },
+    });
+  };
+
   const statusTag = (status: string) => {
     const colorMap: Record<string, string> = {
       pending: 'default', running: 'processing', completed: 'success',
@@ -150,6 +170,9 @@ function EvalTasksPage() {
           )}
           <Button type="link" icon={<BarChartOutlined />} onClick={() => navigate(`/eval-tasks/${record.id}/report`)}>
             报告
+          </Button>
+          <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id, record.name)}>
+            删除
           </Button>
         </Space>
       ),
