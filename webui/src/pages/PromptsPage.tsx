@@ -177,6 +177,17 @@ function PromptsPage() {
     },
     { title: '版本', dataIndex: 'current_version', key: 'current_version', width: 80 },
     {
+      title: '来源', dataIndex: 'source', key: 'source', width: 100,
+      render: (s: string) => {
+        const map: Record<string, { label: string; color: string }> = {
+          prompt_page: { label: 'Prompt页面', color: 'blue' },
+          eval_task: { label: '评测任务', color: 'green' },
+        };
+        const info = map[s] || { label: s || '-', color: 'default' };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      },
+    },
+    {
       title: '操作',
       key: 'actions',
       width: 280,
