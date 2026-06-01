@@ -51,6 +51,9 @@ def run_optimization_task(self, task_id: int, config_json: str, dataset_items_js
     async def _run():
         nonlocal score_history_tracker
 
+        from app.core.database import engine
+        await engine.dispose()
+
         async with async_session() as db:
             # 更新状态
             await db.execute(
@@ -139,6 +142,8 @@ def run_optimization_task(self, task_id: int, config_json: str, dataset_items_js
         return output
     except Exception as e:
         async def _fail():
+            from app.core.database import engine
+            await engine.dispose()
             async with async_session() as db:
                 await db.execute(
                     update(OptimizationTask).where(OptimizationTask.id == task_id).values(

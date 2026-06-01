@@ -3,10 +3,12 @@ Demo 种子数据脚本
 =================
 自动初始化演示环境：
 - 3个测试用户 (admin / evaluator / developer)
-- 2个接入模型 (Mock LLM for demo)
-- 1个知识库问答数据集 (基于 RepLiQA 格式, 20条)
-- 内置评测指标
-- 1个完整的 Prompt 调优任务执行记录 (含10轮迭代)
+- 3个接入模型 (DeepSeek-V3 / GPT-4o / Qwen2.5)
+- 2个数据集 (金融知识库QA 20条 + 代码生成 10条)
+- 3个项目 (金融QA / 代码生成 / 多模态)
+- 5个内置评测指标
+- 3个评测任务 (QA初始 + QA优化后 + 代码生成基线)
+- 1个完整的 Prompt 调优任务执行记录 (含10轮迭代, 0.32→0.86)
 
 运行方式:
   cd backend && python -m demo.seed_demo
@@ -22,7 +24,7 @@ import random
 # 确保项目路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'backend'))
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from app.core.database import async_session, engine, Base
 from app.core.security import get_password_hash
 from app.models.user import User
@@ -112,6 +114,15 @@ MODELS_DATA = [
         "model_identifier": "gpt-4o",
         "description": "OpenAI GPT-4o，用作优化器模型进行 Prompt 调优",
     },
+    {
+        "name": "Qwen2.5 (演示)",
+        "provider": "Alibaba",
+        "model_type": "chat",
+        "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "api_key": "sk-demo-qwen-key-xxxxxxxxxx",
+        "model_identifier": "qwen-plus",
+        "description": "通义千问大语言模型",
+    },
 ]
 
 # RepLiQA 风格知识库问答数据集（金融领域）
@@ -140,6 +151,24 @@ QA_DATASET = {
         {"input_text": "如何理解资产证券化？", "expected_output": "资产证券化（Asset Securitization）是将缺乏流动性但具有稳定可预期现金流的资产打包转换为可在金融市场上交易的证券的过程。基本流程：1）发起人将基础资产（如贷款、应收账款、租赁收益权等）出售给SPV（特殊目的载体）；2）SPV以资产池现金流为支持发行证券；3）通过信用增级（内部/外部增信）提升证券评级；4）证券在市场上向投资者发售；5）服务机构负责基础资产的后续管理。资产证券化可帮助原始权益人盘活存量资产、拓宽融资渠道、优化资产负债结构。", "difficulty": "hard"},
         {"input_text": "什么是高频交易？", "expected_output": "高频交易（HFT）是利用超高速计算机和算法在极短时间内（毫秒甚至微秒级）执行大量交易指令的策略。核心特征：1）极低的延迟（使用FPGA硬件加速、主机托管co-location）；2）极高的订单成交比（大量订单被快速撤销）；3）持仓时间极短（通常不过夜）；4）依赖市场微观结构套利。常见策略包括做市策略、统计套利、延迟套利和事件驱动策略。高频交易在提供市场流动性的同时，也引发了关于市场公平性、技术军备竞赛和系统性风险的争议。", "difficulty": "medium"},
         {"input_text": "为什么要建立多层次资本市场？", "expected_output": "多层次资本市场的建设是为了满足不同发展阶段、不同类型企业的融资需求和不同风险偏好投资者的投资需求。中国多层次资本市场体系包括：1）主板（大型成熟企业）；2）科创板（硬科技企业）；3）创业板（创新创业企业）；4）北交所/新三板（中小企业）；5）区域性股权市场（地方小微企业）。多层次市场的重要性在于：丰富融资渠道、优化资源配置、分散金融风险、服务实体经济、推动科技创新。通过转板机制，企业可以在不同层次市场间流动，实现梯度发展。", "difficulty": "hard"},
+    ],
+}
+
+CODE_DATASET = {
+    "name": "代码生成评测集",
+    "description": "Python/Java代码生成评测数据，包含10条编程任务，覆盖算法、数据结构、字符串处理等场景。",
+    "scene": "code",
+    "items": [
+        {"input_text": "用Python写一个函数，反转一个字符串", "expected_output": "def reverse_string(s):\n    return s[::-1]", "difficulty": "easy"},
+        {"input_text": "用Python实现二分查找算法", "expected_output": "def binary_search(arr, target):\n    left, right = 0, len(arr) - 1\n    while left <= right:\n        mid = (left + right) // 2\n        if arr[mid] == target:\n            return mid\n        elif arr[mid] < target:\n            left = mid + 1\n        else:\n            right = mid - 1\n    return -1", "difficulty": "easy"},
+        {"input_text": "写一个Python函数，判断一个数是否为素数", "expected_output": "def is_prime(n):\n    if n < 2:\n        return False\n    for i in range(2, int(n ** 0.5) + 1):\n        if n % i == 0:\n            return False\n    return True", "difficulty": "easy"},
+        {"input_text": "用Python实现快速排序", "expected_output": "def quick_sort(arr):\n    if len(arr) <= 1:\n        return arr\n    pivot = arr[len(arr) // 2]\n    left = [x for x in arr if x < pivot]\n    middle = [x for x in arr if x == pivot]\n    right = [x for x in arr if x > pivot]\n    return quick_sort(left) + middle + quick_sort(right)", "difficulty": "medium"},
+        {"input_text": "写一个Python函数，合并两个有序数组", "expected_output": "def merge_sorted_arrays(arr1, arr2):\n    result = []\n    i = j = 0\n    while i < len(arr1) and j < len(arr2):\n        if arr1[i] < arr2[j]:\n            result.append(arr1[i])\n            i += 1\n        else:\n            result.append(arr2[j])\n            j += 1\n    result.extend(arr1[i:])\n    result.extend(arr2[j:])\n    return result", "difficulty": "easy"},
+        {"input_text": "用Java写一个单例模式的实现", "expected_output": "public class Singleton {\n    private static volatile Singleton instance;\n    private Singleton() {}\n    public static Singleton getInstance() {\n        if (instance == null) {\n            synchronized (Singleton.class) {\n                if (instance == null) {\n                    instance = new Singleton();\n                }\n            }\n        }\n        return instance;\n    }\n}", "difficulty": "medium"},
+        {"input_text": "用Python写一个函数，找出列表中出现次数最多的元素", "expected_output": "from collections import Counter\n\ndef most_frequent(arr):\n    if not arr:\n        return None\n    return Counter(arr).most_common(1)[0][0]", "difficulty": "easy"},
+        {"input_text": "写一个Python函数，验证一个字符串是否为有效的括号序列", "expected_output": "def is_valid_parentheses(s):\n    stack = []\n    pairs = {')': '(', ']': '[', '}': '{'}\n    for ch in s:\n        if ch in '([{':\n            stack.append(ch)\n        elif ch in ')]}':\n            if not stack or stack.pop() != pairs[ch]:\n                return False\n    return len(stack) == 0", "difficulty": "medium"},
+        {"input_text": "用Python实现斐波那契数列（返回第n项）", "expected_output": "def fibonacci(n):\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b", "difficulty": "easy"},
+        {"input_text": "写一个Python函数，计算两个大数之和（以字符串表示）", "expected_output": "def add_strings(num1, num2):\n    result = []\n    carry = 0\n    i, j = len(num1) - 1, len(num2) - 1\n    while i >= 0 or j >= 0 or carry:\n        d1 = int(num1[i]) if i >= 0 else 0\n        d2 = int(num2[j]) if j >= 0 else 0\n        total = d1 + d2 + carry\n        result.append(str(total % 10))\n        carry = total // 10\n        i -= 1\n        j -= 1\n    return ''.join(reversed(result))", "difficulty": "medium"},
     ],
 }
 
@@ -231,78 +260,111 @@ async def seed_database():
         await db.commit()
 
         # 3. 创建项目
-        print("\n[3/7] 创建演示项目...")
-        existing_project = await db.execute(
-            select(Project).where(Project.name == "金融知识库问答优化项目")
-        )
-        if existing_project.scalar_one_or_none():
-            result = await db.execute(select(Project).where(Project.name == "金融知识库问答优化项目"))
-            project = result.scalar_one()
-            print(f"  项目已存在，跳过")
-        else:
-            project = Project(
-                name="金融知识库问答优化项目",
-                description="基于恒生电子金融知识库的智能问答系统，通过Prompt调优提升问答准确性和专业性。",
-                project_type="chat",
-                status="active",
-                created_by=user_ids["developer"],
+        print("\n[3/8] 创建演示项目...")
+        PROJECTS_DATA = [
+            {
+                "name": "金融知识库问答优化项目",
+                "description": "基于恒生电子金融知识库的智能问答系统，通过Prompt调优提升问答准确性和专业性。",
+                "project_type": "chat",
+            },
+            {
+                "name": "代码生成评测项目",
+                "description": "多模型代码生成能力对比评测，覆盖Python和Java常见编程任务。",
+                "project_type": "code",
+            },
+            {
+                "name": "多模态理解评测",
+                "description": "图片+文本多模态模型能力评估项目。",
+                "project_type": "multimodal",
+            },
+        ]
+        project_ids = {}
+        for pdata in PROJECTS_DATA:
+            existing_p = await db.execute(
+                select(Project).where(Project.name == pdata["name"])
             )
-            db.add(project)
-            await db.flush()
-            print(f"  创建项目: {project.name}")
-        project_id = project.id
+            if existing_p.scalar_one_or_none():
+                result = await db.execute(select(Project).where(Project.name == pdata["name"]))
+                project = result.scalar_one()
+                print(f"  项目 {pdata['name']} 已存在，跳过")
+            else:
+                project = Project(
+                    name=pdata["name"],
+                    description=pdata["description"],
+                    project_type=pdata["project_type"],
+                    status="active",
+                    created_by=user_ids["developer"],
+                )
+                db.add(project)
+                await db.flush()
+                print(f"  创建项目: {project.name}")
+            project_ids[pdata["name"]] = project.id
         await db.commit()
+        qa_project_id = project_ids["金融知识库问答优化项目"]
+        code_project_id = project_ids["代码生成评测项目"]
 
         # 4. 创建数据集
-        print("\n[4/7] 创建评测数据集 (RepLiQA格式, 20条)...")
-        existing_ds = await db.execute(
-            select(Dataset).where(Dataset.name == QA_DATASET["name"])
-        )
-        if existing_ds.scalar_one_or_none():
-            result = await db.execute(select(Dataset).where(Dataset.name == QA_DATASET["name"]))
-            dataset = result.scalar_one()
-            # 删除旧items
-            await db.execute(
-                "DELETE FROM dataset_items WHERE dataset_id = :did",
+        print("\n[4/8] 创建评测数据集...")
+        ALL_DATASETS = [QA_DATASET, CODE_DATASET]
+        all_dataset_ids = {}
+        all_item_ids = []
+
+        for ds_data in ALL_DATASETS:
+            existing_ds = await db.execute(
+                select(Dataset).where(Dataset.name == ds_data["name"])
+            )
+            if existing_ds.scalar_one_or_none():
+                result = await db.execute(select(Dataset).where(Dataset.name == ds_data["name"]))
+                dataset = result.scalar_one()
+                await db.execute(
+                text("DELETE FROM dataset_items WHERE dataset_id = :did"),
                 {"did": dataset.id}
             )
+                await db.commit()
+                print(f"  数据集 {ds_data['name']} 已存在，重新创建条目")
+            else:
+                dataset = Dataset(
+                    name=ds_data["name"],
+                    description=ds_data["description"],
+                    scene=ds_data["scene"],
+                    status="published",
+                    version="v1",
+                    item_count=len(ds_data["items"]),
+                    created_by=user_ids["evaluator"],
+                    reviewer_id=user_ids["admin"],
+                )
+                db.add(dataset)
+                await db.flush()
+                print(f"  创建数据集: {dataset.name}")
+
+            ds_items = []
+            for i, item_data in enumerate(ds_data["items"]):
+                item = DatasetItem(
+                    dataset_id=dataset.id,
+                    input_text=item_data["input_text"],
+                    expected_output=item_data["expected_output"],
+                    difficulty=item_data["difficulty"],
+                    scene_label=ds_data.get("scene_label", ds_data["scene"]),
+                    sort_order=i,
+                )
+                db.add(item)
+                await db.flush()
+                ds_items.append(item.id)
+
+            dataset.item_count = len(ds_items)
             await db.commit()
-            print(f"  数据集已存在，重新创建条目")
-        else:
-            dataset = Dataset(
-                name=QA_DATASET["name"],
-                description=QA_DATASET["description"],
-                scene=QA_DATASET["scene"],
-                status="published",
-                version="v1",
-                item_count=len(QA_DATASET["items"]),
-                created_by=user_ids["evaluator"],
-                reviewer_id=user_ids["admin"],
-            )
-            db.add(dataset)
-            await db.flush()
-            print(f"  创建数据集: {dataset.name}")
+            print(f"  已创建 {len(ds_items)} 条数据")
+            all_dataset_ids[ds_data["name"]] = dataset.id
+            if ds_data["scene"] == "qa":
+                all_item_ids = ds_items
+            elif ds_data["scene"] == "code":
+                code_item_ids = ds_items
 
-        item_ids = []
-        for i, item_data in enumerate(QA_DATASET["items"]):
-            item = DatasetItem(
-                dataset_id=dataset.id,
-                input_text=item_data["input_text"],
-                expected_output=item_data["expected_output"],
-                difficulty=item_data["difficulty"],
-                scene_label="金融知识库",
-                sort_order=i,
-            )
-            db.add(item)
-            await db.flush()
-            item_ids.append(item.id)
-
-        dataset.item_count = len(item_ids)
-        await db.commit()
-        print(f"  已创建 {len(item_ids)} 条问答数据")
+        qa_dataset_id = all_dataset_ids[QA_DATASET["name"]]
+        code_dataset_id = all_dataset_ids[CODE_DATASET["name"]]
 
         # 5. 创建内置评测指标
-        print("\n[5/7] 初始化评测指标...")
+        print("\n[5/8] 初始化评测指标...")
         builtin_metrics = [
             {"name": "精确匹配 (EM)", "code": "em", "metric_type": "builtin",
              "description": "Exact Match：模型输出与预期输出完全一致得1分，否则0分"},
@@ -338,7 +400,7 @@ async def seed_database():
         print(f"  已初始化 {len(builtin_metrics)} 个评测指标")
 
         # 6. 创建 Prompt 和调优任务
-        print("\n[6/7] 创建 Prompt 和模拟10轮调优历史...")
+        print("\n[6/8] 创建 Prompt 和模拟10轮调优历史...")
         existing_prompt = await db.execute(
             select(Prompt).where(Prompt.name == "金融知识库问答Prompt")
         )
@@ -357,7 +419,7 @@ async def seed_database():
                 current_version="v11",
                 best_score=SCORE_HISTORY[-1],
                 created_by=user_ids["developer"],
-                project_id=project_id,
+                project_id=qa_project_id,
             )
             db.add(prompt)
             await db.flush()
@@ -373,23 +435,23 @@ async def seed_database():
             opt_task = result.scalar_one()
             # 清理旧轮次
             await db.execute(
-                "DELETE FROM optimization_candidates WHERE optimization_round_id IN "
-                "(SELECT id FROM optimization_rounds WHERE optimization_task_id = :tid)",
+                text("DELETE FROM optimization_candidates WHERE optimization_round_id IN "
+                "(SELECT id FROM optimization_rounds WHERE optimization_task_id = :tid)"),
                 {"tid": opt_task.id}
             )
             await db.execute(
-                "DELETE FROM optimization_rounds WHERE optimization_task_id = :tid",
+                text("DELETE FROM optimization_rounds WHERE optimization_task_id = :tid"),
                 {"tid": opt_task.id}
             )
             await db.commit()
         else:
             opt_task = OptimizationTask(
                 name="金融QA-Prompt优化任务",
-                project_id=project_id,
+                project_id=qa_project_id,
                 prompt_id=prompt_id,
                 model_id=model_ids["DeepSeek-V3 (演示)"],
                 optimizer_model_id=model_ids["GPT-4o (演示)"],
-                dataset_id=dataset.id,
+                dataset_id=qa_dataset_id,
                 metric_ids=",".join(str(metric_ids[c]) for c in ["em", "bleu", "rouge_l"]),
                 initial_prompt=INITIAL_PROMPT,
                 best_prompt=OPTIMIZED_PROMPT,
@@ -453,34 +515,35 @@ async def seed_database():
                 db.add(version)
         await db.commit()
 
-        # 7. 创建演示评测任务
-        print("\n[7/7] 创建演示评测任务...")
+        # 7. 创建评测任务
+        print("\n[7/8] 创建演示评测任务...")
+
+        # --- 评测任务 1: 金融QA-初始Prompt ---
         existing_eval = await db.execute(
             select(EvalTask).where(EvalTask.name == "金融QA-初始Prompt评测")
         )
         if existing_eval.scalar_one_or_none():
-            print(f"  评测任务已存在，跳过")
+            print(f"  评测任务 '金融QA-初始Prompt评测' 已存在，跳过")
         else:
             eval_task = EvalTask(
                 name="金融QA-初始Prompt评测",
-                project_id=project_id,
+                project_id=qa_project_id,
                 model_id=model_ids["DeepSeek-V3 (演示)"],
-                dataset_id=dataset.id,
+                dataset_id=qa_dataset_id,
                 metric_ids=",".join(str(metric_ids[c]) for c in ["em", "bleu", "rouge_l"]),
                 prompt_content=INITIAL_PROMPT,
                 prompt_id=prompt_id,
                 status="completed",
-                total_items=len(item_ids),
-                completed_items=len(item_ids),
+                total_items=len(all_item_ids),
+                completed_items=len(all_item_ids),
                 overall_score=SCORE_HISTORY[0],
-                result_json=json.dumps({"overall_score": SCORE_HISTORY[0], "total_items": len(item_ids)}),
+                result_json=json.dumps({"overall_score": SCORE_HISTORY[0], "total_items": len(all_item_ids)}),
                 created_by=user_ids["developer"],
             )
             db.add(eval_task)
             await db.flush()
 
-            # 为评测任务创建逐条结果
-            for i, item_id in enumerate(item_ids):
+            for i, item_id in enumerate(all_item_ids):
                 item_data = QA_DATASET["items"][i]
                 mock_output = mock_llm.respond(INITIAL_PROMPT, item_data["input_text"])
 
@@ -503,8 +566,108 @@ async def seed_database():
                 db.add(eval_result)
 
             await db.commit()
-            print(f"  创建评测任务: {eval_task.name}")
-            print(f"  初始Prompt得分: {SCORE_HISTORY[0]:.2f}")
+            print(f"  创建评测任务: {eval_task.name} (得分: {SCORE_HISTORY[0]:.2f})")
+
+        # --- 评测任务 2: 优化后Prompt对比评测 ---
+        existing_eval2 = await db.execute(
+            select(EvalTask).where(EvalTask.name == "金融QA-优化后Prompt评测")
+        )
+        if existing_eval2.scalar_one_or_none():
+            print(f"  评测任务 '金融QA-优化后Prompt评测' 已存在，跳过")
+        else:
+            eval_task2 = EvalTask(
+                name="金融QA-优化后Prompt评测",
+                project_id=qa_project_id,
+                model_id=model_ids["DeepSeek-V3 (演示)"],
+                dataset_id=qa_dataset_id,
+                metric_ids=",".join(str(metric_ids[c]) for c in ["em", "bleu", "rouge_l"]),
+                prompt_content=OPTIMIZED_PROMPT,
+                prompt_id=prompt_id,
+                status="completed",
+                total_items=len(all_item_ids),
+                completed_items=len(all_item_ids),
+                overall_score=SCORE_HISTORY[-1],
+                result_json=json.dumps({"overall_score": SCORE_HISTORY[-1], "total_items": len(all_item_ids)}),
+                created_by=user_ids["developer"],
+            )
+            db.add(eval_task2)
+            await db.flush()
+
+            for i, item_id in enumerate(all_item_ids):
+                item_data = QA_DATASET["items"][i]
+                mock_output = mock_llm.respond(OPTIMIZED_PROMPT, item_data["input_text"])
+
+                score_em = 1.0 if mock_output.strip() == item_data["expected_output"].strip() else 0.0
+                score_bleu = random.uniform(0.5, 0.9)
+                score_rouge = random.uniform(0.6, 0.95)
+
+                eval_result = EvalResult(
+                    eval_task_id=eval_task2.id,
+                    dataset_item_id=item_id,
+                    model_output=mock_output,
+                    expected_output=item_data["expected_output"],
+                    scores_json=json.dumps({
+                        "em": {"score": score_em, "detail": "精确匹配" if score_em > 0 else "不匹配"},
+                        "bleu": {"score": round(score_bleu, 4), "detail": f"BLEU: {score_bleu*100:.1f}"},
+                        "rouge_l": {"score": round(score_rouge, 4), "detail": f"ROUGE-L: {score_rouge:.4f}"},
+                    }),
+                    latency_ms=random.randint(150, 600),
+                )
+                db.add(eval_result)
+
+            await db.commit()
+            print(f"  创建评测任务: {eval_task2.name} (得分: {SCORE_HISTORY[-1]:.2f})")
+
+        # --- 评测任务 3: 代码生成基线评测 ---
+        print("\n[8/8] 创建代码生成评测任务...")
+        existing_eval3 = await db.execute(
+            select(EvalTask).where(EvalTask.name == "代码生成-DeepSeek基线评测")
+        )
+        if existing_eval3.scalar_one_or_none():
+            print(f"  评测任务 '代码生成-DeepSeek基线评测' 已存在，跳过")
+        else:
+            CODE_BASELINE_PROMPT = "写代码完成以下任务：{input}"
+            eval_task3 = EvalTask(
+                name="代码生成-DeepSeek基线评测",
+                project_id=code_project_id,
+                model_id=model_ids["DeepSeek-V3 (演示)"],
+                dataset_id=code_dataset_id,
+                metric_ids=",".join(str(metric_ids[c]) for c in ["em", "bleu", "rouge_l"]),
+                prompt_content=CODE_BASELINE_PROMPT,
+                status="completed",
+                total_items=len(code_item_ids),
+                completed_items=len(code_item_ids),
+                overall_score=0.45,
+                result_json=json.dumps({"overall_score": 0.45, "total_items": len(code_item_ids)}),
+                created_by=user_ids["developer"],
+            )
+            db.add(eval_task3)
+            await db.flush()
+
+            for i, item_id in enumerate(code_item_ids):
+                item_data = CODE_DATASET["items"][i]
+                mock_output = mock_llm.respond(CODE_BASELINE_PROMPT, item_data["input_text"])
+
+                score_em = 1.0 if mock_output.strip() == item_data["expected_output"].strip() else 0.0
+                score_bleu = random.uniform(0.2, 0.6)
+                score_rouge = random.uniform(0.3, 0.7)
+
+                eval_result = EvalResult(
+                    eval_task_id=eval_task3.id,
+                    dataset_item_id=item_id,
+                    model_output=mock_output,
+                    expected_output=item_data["expected_output"],
+                    scores_json=json.dumps({
+                        "em": {"score": score_em, "detail": "精确匹配" if score_em > 0 else "不匹配"},
+                        "bleu": {"score": round(score_bleu, 4), "detail": f"BLEU: {score_bleu*100:.1f}"},
+                        "rouge_l": {"score": round(score_rouge, 4), "detail": f"ROUGE-L: {score_rouge:.4f}"},
+                    }),
+                    latency_ms=random.randint(300, 1200),
+                )
+                db.add(eval_result)
+
+            await db.commit()
+            print(f"  创建评测任务: {eval_task3.name} (得分: 0.45)")
 
         # 审计日志
         audit = AuditLog(
@@ -525,10 +688,15 @@ async def seed_database():
     print(f"  评测管理员: evaluator / eval123")
     print(f"  开发者: developer / dev123")
     print(f"\n演示数据:")
-    print(f"  项目: {project.name}")
-    print(f"  数据集: {dataset.name} ({len(item_ids)}条)")
+    print(f"  项目: {len(project_ids)}个")
+    for pname in PROJECTS_DATA:
+        print(f"    - {pname['name']}")
+    print(f"  数据集: {len(ALL_DATASETS)}个")
+    for ds in ALL_DATASETS:
+        print(f"    - {ds['name']} ({len(ds['items'])}条)")
     print(f"  模型: {len(model_ids)}个")
     print(f"  指标: {len(metric_ids)}个")
+    print(f"  评测任务: 3个 (QA初始 + QA优化后 + 代码生成)")
     print(f"  Prompt优化: {len(SCORE_HISTORY)-1}轮迭代, 分数 {SCORE_HISTORY[0]:.2f} → {SCORE_HISTORY[-1]:.2f}")
     print(f"\n启动后端: cd backend && uvicorn app.main:app --reload")
     print(f"启动前端: cd webui && npm run dev")
