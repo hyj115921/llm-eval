@@ -25,7 +25,7 @@ function DatasetDetail() {
     try {
       const [dsRes, itemsRes] = await Promise.all([
         datasetsAPI.get(Number(id)),
-        datasetsAPI.items(Number(id), 1, 200),
+        datasetsAPI.items(Number(id), 1, 100),
       ]);
       setDataset(dsRes.data);
       setItems(itemsRes.data.items || []);
