@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Table, Button, Modal, Form, Input, Select, Space, Tag, message,
+  Table, Button, Modal, Form, Input, Select, Space, Tag, message, Radio,
 } from 'antd';
 import { PlusOutlined, PlayCircleOutlined, PauseCircleOutlined, BarChartOutlined, DeleteOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { evalsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI } from '../services/api';
-import type { EvalTask, Project, LLMModel, Dataset, Metric } from '../types';
+import { evalsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI, promptsAPI } from '../services/api';
+import type { EvalTask, Project, LLMModel, Dataset, Metric, Prompt } from '../types';
 
 function EvalTasksPage() {
   const navigate = useNavigate();
@@ -18,6 +18,8 @@ function EvalTasksPage() {
   const [models, setModels] = useState<LLMModel[]>([]);
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [metricsList, setMetricsList] = useState<Metric[]>([]);
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [promptMode, setPromptMode] = useState<'manual' | 'select'>('manual');
 
   const fetchTasks = async () => {
     setLoading(true);
@@ -34,16 +36,18 @@ function EvalTasksPage() {
 
   const fetchRefs = async () => {
     try {
-      const [pjRes, mdRes, dsRes, mtRes] = await Promise.all([
+      const [pjRes, mdRes, dsRes, mtRes, ptRes] = await Promise.all([
         projectsAPI.list(1, 100),
         modelsAPI.list(1, 100),
         datasetsAPI.list(1, 100),
         metricsAPI.list(1, 100),
+        promptsAPI.list(1, 100),
       ]);
       setProjects(pjRes.data.items || []);
       setModels(mdRes.data.items || []);
       setDatasets(dsRes.data.items || []);
       setMetricsList(mtRes.data.items || []);
+      setPrompts(ptRes.data.items || []);
     } catch {
       // ignore
     }
@@ -59,6 +63,14 @@ function EvalTasksPage() {
       const payload = { ...values };
       if (Array.isArray(payload.metric_ids)) {
         payload.metric_ids = payload.metric_ids.join(',');
+      }
+      if (promptMode === 'select') {
+        // 引用已有 Prompt — 传 prompt_id，不传 prompt_content
+        payload.prompt_id = values.prompt_id;
+        payload.prompt_content = '';
+      } else {
+        // 手动输入 — 传 prompt_content，后端会自动创建 Prompt
+        payload.prompt_id = null;
       }
       await evalsAPI.create(payload);
       message.success('创建成功');
@@ -226,8 +238,35 @@ function EvalTasksPage() {
               {metricsList.map((m) => <Select.Option key={m.id} value={m.id}>{m.name}</Select.Option>)}
             </Select>
           </Form.Item>
-          <Form.Item name="prompt_content" label="Prompt内容">
-            <Input.TextArea rows={5} placeholder="{input} 会被替换为数据集中的输入文本" />
+          <Form.Item label="Prompt来源">
+            <Radio.Group value={promptMode} onChange={(e) => { setPromptMode(e.target.value); form.setFieldValue('prompt_id', undefined); form.setFieldValue('prompt_content', ''); }}>
+              <Radio.Button value="select">引用已有 Prompt</Radio.Button>
+              <Radio.Button value="manual">手动输入</Radio.Button>
+            </Radio.Group>
+          </Form.Item>
+          {promptMode === 'select' ? (
+            <Form.Item name="prompt_id" label="选择Prompt" rules={[{ required: true, message: '请选择Prompt' }]}>
+              <Select
+                placeholder="选择已有的Prompt"
+                onChange={(val) => {
+                  const p = prompts.find((x) => x.id === val);
+                  if (p) form.setFieldValue('prompt_content', p.current_content);
+                }}
+              >
+                {prompts.map((p) => (
+                  <Select.Option key={p.id} value={p.id}>
+                    {p.name} ({p.current_version}) — 得分: {p.best_score?.toFixed(2) || '-'}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Form.Item>
+          ) : (
+            <Form.Item name="prompt_content" label="Prompt内容">
+              <Input.TextArea rows={5} placeholder="{input} 会被替换为数据集中的输入文本" />
+            </Form.Item>
+          )}
+          <Form.Item name="prompt_content" hidden>
+            <Input />
           </Form.Item>
         </Form>
       </Modal>

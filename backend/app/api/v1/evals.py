@@ -156,14 +156,54 @@ async def create_eval_task(
                 if m.status != "approved":
                     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"评测标准 '{m.name}' 状态为 '{m.status}'，只有已审核的标准才能用于评测")
 
+        # 处理 Prompt：引用已有 或 手动创建
+        prompt_id = req.prompt_id
+        prompt_content = req.prompt_content or ""
+
+        if prompt_id:
+            # 引用已有 Prompt — 读取其内容
+            from app.models.prompt import Prompt as PromptModel
+            p_result = await db.execute(select(PromptModel).where(PromptModel.id == prompt_id))
+            prompt = p_result.scalar_one_or_none()
+            if not prompt:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="引用的 Prompt 不存在")
+            if not prompt_content:
+                prompt_content = prompt.current_content or ""
+        elif prompt_content.strip():
+            # 手动输入 — 自动创建 Prompt 记录，标记来源为 eval_task
+            from app.models.prompt import Prompt as PromptModel, PromptVersion
+            prompt_name = req.name + " - Prompt"
+            prompt = PromptModel(
+                name=prompt_name,
+                description=f"从评测任务「{req.name}」自动创建",
+                scene="general",
+                current_content=prompt_content,
+                current_version="v1",
+                source="eval_task",
+                created_by=current_user.id,
+                project_id=req.project_id,
+            )
+            db.add(prompt)
+            await db.flush()
+            version = PromptVersion(
+                prompt_id=prompt.id,
+                version="v1",
+                content=prompt_content,
+                score=0.0,
+                source="initial",
+            )
+            db.add(version)
+            await db.flush()
+            prompt_id = prompt.id
+
         task = EvalTask(
             name=req.name,
             project_id=req.project_id,
             model_id=req.model_id,
             dataset_id=req.dataset_id,
             metric_ids=req.metric_ids or "",
-            prompt_content=req.prompt_content or "",
-            prompt_id=req.prompt_id,
+            prompt_content=prompt_content,
+            prompt_id=prompt_id,
             schedule_type=req.schedule_type or "immediate",
             cron_expression=req.cron_expression or "",
             total_items=dataset.item_count,

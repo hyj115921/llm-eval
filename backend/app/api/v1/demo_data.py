@@ -102,7 +102,7 @@ DEMO_METRICS = [
 
 # ====== Prompt ======
 DEMO_PROMPTS = [
-    {"id": 1, "name": "金融知识库问答Prompt", "description": "经10轮优化的金融QA Prompt", "scene": "qa", "current_version": "v11", "current_content": "你是一位金融科技专家...", "best_score": 0.86, "project_id": 1, "created_by": 3, "created_at": NOW, "updated_at": NOW},
+    {"id": 1, "name": "金融知识库问答Prompt", "description": "经10轮优化的金融QA Prompt", "scene": "qa", "current_version": "v11", "current_content": "你是一位金融科技专家...", "best_score": 0.86, "source": "prompt_page", "project_id": 1, "created_by": 3, "created_at": NOW, "updated_at": NOW},
 ]
 
 # ====== 评测任务 ======
