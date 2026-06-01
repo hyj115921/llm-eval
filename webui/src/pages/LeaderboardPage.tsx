@@ -61,7 +61,7 @@ function LeaderboardPage() {
             name: '综合得分', type: 'bar',
             data: data.charts.comparison.scores,
             itemStyle: { color: '#1677ff' },
-            label: { show: true, position: 'top', formatter: '{c:.2f}' },
+            label: { show: true, position: 'top', formatter: (p: { value: number }) => p.value.toFixed(2) },
           },
           {
             name: '延迟(ms)', type: 'bar',
