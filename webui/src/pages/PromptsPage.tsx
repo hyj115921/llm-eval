@@ -6,7 +6,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, ThunderboltOutlined } from 
 import { useNavigate } from 'react-router-dom';
 import type { ColumnsType } from 'antd/es/table';
 import { promptsAPI, projectsAPI, modelsAPI, datasetsAPI, metricsAPI } from '../services/api';
-import type { Prompt, OptimizationTask, Project, LLMModel, Dataset, Metric } from '../types';
+import type { Prompt, PromptVersion, OptimizationTask, Project, LLMModel, Dataset, Metric } from '../types';
 
 interface OptTaskDisplay {
   id: number;
@@ -32,6 +32,10 @@ function PromptsPage() {
   const [metricsList, setMetricsList] = useState<Metric[]>([]);
   const [promptForm] = Form.useForm();
   const [optForm] = Form.useForm();
+  const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [versions, setVersions] = useState<PromptVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
 
   const fetchPrompts = async () => {
     setLoading(true);
@@ -126,6 +130,20 @@ function PromptsPage() {
     }
   };
 
+  const handleShowVersions = async (record: Prompt) => {
+    setSelectedPrompt(record);
+    setVersionModalOpen(true);
+    setVersionsLoading(true);
+    try {
+      const res = await promptsAPI.versions(record.id);
+      setVersions(res.data.items || []);
+    } catch {
+      setVersions([]);
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
   const statusTag = (status: string) => {
     const colorMap: Record<string, string> = {
       pending: 'default',
@@ -191,7 +209,7 @@ function PromptsPage() {
           >
             优化
           </Button>
-          <Button type="link" onClick={() => message.info('版本历史功能开发中')}>
+          <Button type="link" onClick={() => handleShowVersions(record)}>
             版本
           </Button>
           <Popconfirm title="确定删除？" onConfirm={() => handleDeletePrompt(record.id)}>
@@ -394,6 +412,44 @@ function PromptsPage() {
             <Input type="number" min={0} max={20} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={selectedPrompt ? `版本历史 - ${selectedPrompt.name}` : '版本历史'}
+        open={versionModalOpen}
+        onCancel={() => setVersionModalOpen(false)}
+        footer={null}
+        width={800}
+      >
+        <Table
+          dataSource={versions}
+          rowKey="id"
+          loading={versionsLoading}
+          pagination={{ pageSize: 10 }}
+          columns={[
+            { title: '版本', dataIndex: 'version', key: 'version', width: 80 },
+            { title: '得分', dataIndex: 'score', key: 'score', width: 80, render: (v: number) => v?.toFixed(4) || '-' },
+            {
+              title: '来源', dataIndex: 'source', key: 'source', width: 80,
+              render: (s: string) => {
+                const map: Record<string, string> = { initial: '初始', manual: '手动', optimization: '优化' };
+                return <Tag>{map[s] || s}</Tag>;
+              },
+            },
+            {
+              title: '内容', dataIndex: 'content', key: 'content', ellipsis: true,
+              render: (c: string) => (
+                <div style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {c}
+                </div>
+              ),
+            },
+            {
+              title: '创建时间', dataIndex: 'created_at', key: 'created_at', width: 160,
+              render: (v: string) => v ? new Date(v).toLocaleString() : '-',
+            },
+          ]}
+        />
       </Modal>
     </div>
   );
