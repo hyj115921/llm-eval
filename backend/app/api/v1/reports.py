@@ -213,7 +213,7 @@ def _demo_comparison() -> dict:
     tasks = [
         {
             "task_id": 1, "task_name": "金融QA-初始评测", "model_id": 1,
-            "model_name": "DeepSeek-V3", "overall_score": 0.76,
+            "model_name": "DeepSeek-V4-Pro", "overall_score": 0.76,
             "total_items": 20, "completed_items": 20, "avg_latency_ms": 420,
             "metric_scores": {
                 "em": {"avg": 0.52, "max": 1.0, "min": 0.0},
