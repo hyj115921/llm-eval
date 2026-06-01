@@ -103,6 +103,9 @@ function PromptsPage() {
   const handleOptSubmit = async () => {
     try {
       const values = await optForm.validateFields();
+      if (Array.isArray(values.metric_ids)) {
+        values.metric_ids = values.metric_ids.join(',');
+      }
       const res = await promptsAPI.createOptimization(values);
       message.success('优化任务创建成功');
       setOptModalOpen(false);
