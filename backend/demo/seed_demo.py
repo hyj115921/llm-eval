@@ -506,6 +506,100 @@ async def seed_database():
         prompt_id = prompt.id
         await db.commit()
 
+        # --- Prompt 2: 金融信息抽取 ---
+        IE_PROMPT_CONTENT = """[SYSTEM]
+你是一位金融信息抽取专家，擅长从金融文档中准确提取结构化信息。你的任务是从给定文本中识别并提取实体、关系和事件。
+
+请严格按以下JSON格式输出，不要输出任何其他内容：
+
+{
+  "实体": [{"文本": "实体名称", "类型": "企业/机构/金额/数量/百分比/时间/地点/产品/金融工具"}],
+  "关系": [{"主体": "实体A", "关系": "关系类型", "客体": "实体B"}],
+  "事件": {"类型": "事件类型", "时间": "发生时间", "主体": "参与方", ...}
+}
+
+提取要求：
+1. 实体类型判断准确，金额统一转换为中文单位（亿元/万元/亿美元）
+2. 关系类型包括但不限于：营收、净利润、合作关系、收购、控股、投资、总部位于
+3. 事件类型包括但不限于：政策发布、收购、上市、债券发行、业绩预告、合资成立
+4. 如果某类信息不存在（如无事件），对应字段可省略
+5. 数值保留原精度，百分比保留一位小数
+
+[/SYSTEM]
+
+待处理文本：{input}"""
+        existing_ie_prompt = await db.execute(
+            select(Prompt).where(Prompt.name == "金融信息抽取Prompt")
+        )
+        if existing_ie_prompt.scalar_one_or_none():
+            result = await db.execute(select(Prompt).where(Prompt.name == "金融信息抽取Prompt"))
+            ie_prompt = result.scalar_one()
+            ie_prompt.current_content = IE_PROMPT_CONTENT
+            ie_prompt.best_score = 0.78
+            ie_prompt.current_version = "v1"
+        else:
+            ie_prompt = Prompt(
+                name="金融信息抽取Prompt",
+                description="用于金融文档的命名实体识别(NER)、关系抽取和事件抽取的结构化Prompt",
+                scene="information_extraction",
+                current_content=IE_PROMPT_CONTENT,
+                current_version="v1",
+                best_score=0.78,
+                created_by=user_ids["developer"],
+                project_id=project_ids.get("信息抽取评测项目", qa_project_id),
+            )
+            db.add(ie_prompt)
+            await db.flush()
+        ie_prompt_id = ie_prompt.id
+        await db.commit()
+        print(f"  创建Prompt: 金融信息抽取Prompt")
+
+        # --- Prompt 3: 金融文本摘要 ---
+        SUMMARIZATION_PROMPT_CONTENT = """[SYSTEM]
+你是一位专业的金融信息分析师，擅长将长篇金融资讯、研究报告和公告文件精炼为简洁准确的摘要。你的摘要将被金融从业人员快速浏览，因此必须信息密集、条理清晰。
+
+请根据以下要求生成摘要：
+1. 先用一句话（不超过50字）概括核心信息作为结论
+2. 再列出3-5个关键要点，每个要点不超过30字
+3. 保留原文中的关键数据（金额、增长率、时间）和主体名称
+4. 保持客观中立，不添加主观评论
+5. 使用专业但易懂的金融术语
+6. 如原文涉及多维度信息，按重要性排序呈现
+7. 总长度控制在150-250字
+
+[/SYSTEM]
+
+以下为需要摘要的内容：
+
+{input}
+
+请生成中文字数控制在200字左右的结构化摘要。"""
+        existing_sum_prompt = await db.execute(
+            select(Prompt).where(Prompt.name == "金融文本摘要Prompt")
+        )
+        if existing_sum_prompt.scalar_one_or_none():
+            result = await db.execute(select(Prompt).where(Prompt.name == "金融文本摘要Prompt"))
+            sum_prompt = result.scalar_one()
+            sum_prompt.current_content = SUMMARIZATION_PROMPT_CONTENT
+            sum_prompt.best_score = 0.82
+            sum_prompt.current_version = "v1"
+        else:
+            sum_prompt = Prompt(
+                name="金融文本摘要Prompt",
+                description="用于金融新闻、公告和研报的结构化摘要生成Prompt，分核心结论+关键要点两层",
+                scene="summarization",
+                current_content=SUMMARIZATION_PROMPT_CONTENT,
+                current_version="v1",
+                best_score=0.82,
+                created_by=user_ids["developer"],
+                project_id=qa_project_id,
+            )
+            db.add(sum_prompt)
+            await db.flush()
+        summarization_prompt_id = sum_prompt.id
+        await db.commit()
+        print(f"  创建Prompt: 金融文本摘要Prompt")
+
         # 创建优化任务
         existing_opt = await db.execute(
             select(OptimizationTask).where(OptimizationTask.name == "金融QA-Prompt优化任务")
