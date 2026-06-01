@@ -57,7 +57,7 @@ function Dashboard() {
           data: names,
           axisLabel: { rotate: 0, fontSize: 11, interval: 0 },
         },
-        yAxis: { type: 'value', name: '分数', min: 0, max: 1 },
+        yAxis: { type: 'value', min: 0, max: 1 },
         series: [{ data: scores, type: 'bar', itemStyle: { color: '#1677ff' } }],
       });
       return () => chart.dispose();
