@@ -25,6 +25,10 @@ def run_eval_task(self, task_id: int, model_config: dict, dataset_items_json: st
     metric_configs = json.loads(metric_configs_json)
 
     async def _run():
+        # 释放可能绑定到其他事件循环的连接
+        from app.core.database import engine
+        await engine.dispose()
+
         async with async_session() as db:
             # 更新状态为运行中
             await db.execute(
